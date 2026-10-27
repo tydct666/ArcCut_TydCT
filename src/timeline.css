@@ -1,0 +1,26 @@
+.timeline-shell{height:148px;min-height:148px;padding:0 12px 4px;display:grid;grid-template-rows:36px 48px 10px 36px;row-gap:4px;min-width:0;overflow:hidden;flex-shrink:0;user-select:none;font-variant-numeric:tabular-nums}
+.timeline-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;min-width:0}
+.timeline-tools>div{display:flex;align-items:center;gap:4px}
+.timeline-tools button{height:36px;padding-inline:8px;display:flex;align-items:center;gap:8px;background:transparent;border-color:transparent}.timeline-tools .icon-button{padding:0}
+.timeline-tools button:hover:enabled,.timeline-tools button.active{background:var(--hover);border-color:var(--line)}
+.timeline{height:48px;position:relative;overflow:hidden;cursor:grab;touch-action:none;background:var(--input);border:1px solid var(--line);isolation:isolate}
+.timeline.is-dragging{cursor:grabbing}.timeline.is-dragging.scrub{cursor:col-resize}
+.ruler{position:absolute;inset:0 0 auto;height:18px;font-size:12px;color:var(--muted);cursor:col-resize;border-bottom:1px solid var(--line);z-index:2}
+.ruler span{position:absolute;top:1px;white-space:nowrap;transform:translateX(-50%);pointer-events:none;padding-inline:3px}.ruler .edge-left{transform:none}.ruler .edge-right{transform:translateX(-100%)}
+.timeline-lane{position:absolute;inset:19px 0 0;pointer-events:none}
+.cut{position:absolute;top:22px;height:22px;min-height:22px;min-width:1px;padding:0;border:1px solid var(--pause-border);background:var(--pause-fill);border-radius:0;cursor:grab;touch-action:none;z-index:2;outline:none;box-shadow:none}
+.cut:hover:enabled{background:var(--pause-hover);border-color:var(--pause-border)}.cut.chosen{background:var(--pause-selected);outline:none;box-shadow:none}
+.cut.candidate{border-style:dashed;background:var(--pause-candidate)}.cut.disabled{opacity:.4;border-style:dashed}
+.cut-point{position:absolute;top:24px;width:2px;min-width:2px;height:18px;min-height:18px;padding:0;border:0;border-radius:0;transform:translateX(-50%);background:var(--yellow);cursor:pointer;z-index:2}
+.cut-point::before{content:'';position:absolute;inset:-3px -5px}.cut-point:hover:enabled,.cut-point.chosen{top:21px;height:24px;background:var(--pause-border);outline:none}
+.preview-coverage{position:absolute;top:45px;height:2px;background:var(--blue);pointer-events:none;z-index:3}
+.playhead-hit{position:absolute;top:0;bottom:0;width:12px;transform:translateX(-50%);cursor:col-resize;z-index:5;touch-action:none}
+.playhead{position:absolute;top:5px;bottom:0;left:50%;width:1px;background:var(--playhead);pointer-events:none}
+.playhead::before{content:'';position:absolute;top:-5px;left:-3px;border-top:5px solid var(--playhead);border-inline:3px solid transparent}
+.playhead-hit.at-left{transform:none}.playhead-hit.at-left .playhead{left:0}.playhead-hit.at-right{transform:translateX(-100%)}.playhead-hit.at-right .playhead{left:auto;right:0}
+.timeline-nav{position:relative;height:10px;min-height:10px;background:var(--input);border:1px solid var(--line);touch-action:none;cursor:pointer;overflow:hidden;isolation:isolate}
+.nav-window{position:absolute;top:0;bottom:0;min-width:2px;background:var(--hover);border-inline:1px solid var(--muted);cursor:grab}
+.nav-handle{position:absolute;top:0;bottom:0;width:12px;min-width:12px;min-height:0;height:100%;padding:0;transform:translateX(-50%);border:0;border-radius:0;background:transparent;cursor:ew-resize}
+.nav-handle::after{content:'';position:absolute;inset:1px auto 1px 5px;width:2px;background:var(--muted)}.nav-handle:hover:enabled{background:var(--hover)}.nav-handle.start{transform:none}.nav-handle.start::after{left:1px}.nav-handle.end{transform:translateX(-100%)}.nav-handle.end::after{left:auto;right:1px}
+.timeline-caption{min-width:0;display:flex;align-items:center;gap:8px;height:36px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.timeline-caption>span{min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex:1}.timeline-caption>button{height:36px;background:transparent;border:0;color:var(--text)}

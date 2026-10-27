@@ -1,0 +1,95 @@
+name: Prepare signed draft release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable version tag, e.g. v0.17.1
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: arkcut-release
+  cancel-in-progress: false
+jobs:
+  release:
+    if: github.repository == 'tydct666/ArcCut_TydCT' && github.ref == 'refs/heads/main'
+    environment: production-release
+    runs-on: windows-2022
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24.19.0
+      - name: Validate tag and distribution audit
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          AUDIT_APPROVED: ${{ vars.THIRD_PARTY_AUDIT_APPROVED }}
+        run: |
+          $v=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:RELEASE_TAG -ne ('v'+$v)) { throw 'Tag/version mismatch' }
+          if ($env:AUDIT_APPROVED -ne 'true') { throw 'Complete third-party source audit before distribution' }
+          node scripts/verify-distribution.cjs distribution-support --require-complete
+          if ($LASTEXITCODE -ne 0) { throw 'Committed distribution materials failed verification' }
+          $commit=git rev-parse HEAD
+          "ARKCUT_SOURCE_COMMIT=$commit" >> $env:GITHUB_ENV
+      - name: Locked build and tests
+        shell: pwsh
+        run: |
+          npm install --global pnpm@11.25.0
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Locked install failed' }
+          rustup toolchain install 1.99.1 --profile minimal
+          rustup override set 1.99.1
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --lib --test update
+          if ($LASTEXITCODE -ne 0) { throw 'Tests failed' }
+          ./scripts/prepare-github.ps1
+          ./scripts/package.ps1 -FinalRelease
+          $v=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          node scripts/verify-release.cjs "dist/ArkCut-$v-win64-light" "dist/ArkCut-$v-win64-light.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Package verification failed' }
+      - name: Sign and verify
+        shell: pwsh
+        env:
+          ARKCUT_SIGNING_KEY_BASE64: ${{ secrets.ARKCUT_SIGNING_KEY_BASE64 }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          $key=Join-Path $env:RUNNER_TEMP 'arkcut-release-private.pk8'
+          try {
+            [IO.File]::WriteAllBytes($key,[Convert]::FromBase64String($env:ARKCUT_SIGNING_KEY_BASE64))
+            $v=(Get-Content package.json -Raw | ConvertFrom-Json).version
+            $asset="ArkCut-$v-win64-light.zip"
+            $url="https://github.com/tydct666/ArcCut_TydCT/releases/download/$env:RELEASE_TAG/$asset"
+            node scripts/sign-update.cjs "dist/ArkCut-$v-win64-light" "dist/$asset" $key $url $env:ARKCUT_SOURCE_COMMIT dist/arkcut-update.json release/notes.txt
+            if ($LASTEXITCODE -ne 0) { throw 'Signing failed' }
+            node scripts/verify-release.cjs "dist/ArkCut-$v-win64-light" "dist/$asset" dist/arkcut-update.json
+            if ($LASTEXITCODE -ne 0) { throw 'Signature verification failed' }
+          } finally { if (Test-Path -LiteralPath $key) { Remove-Item -LiteralPath $key -Force } }
+      - name: Create draft and verify uploaded assets before index
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          gh release view $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY 2>$null
+          if ($LASTEXITCODE -eq 0) { throw 'Release already exists; never replace published assets' }
+          gh release create $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --verify-tag --draft --title "ArkCut $env:RELEASE_TAG" --notes-file release/notes.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed' }
+          $v=(Get-Content package.json -Raw | ConvertFrom-Json).version
+          $assets=@("dist/ArkCut-$v-win64-light.zip","dist/ArkCut-$v-source.zip",'dist/SHA256SUMS.txt','dist/arkcut-update.json.sig')
+          gh release upload $env:RELEASE_TAG @assets --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Asset upload failed; index withheld' }
+          $verify=Join-Path $env:RUNNER_TEMP 'verify-release'
+          gh release download $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --dir $verify
+          if ($LASTEXITCODE -ne 0) { throw 'Asset readback failed; index withheld' }
+          foreach($asset in $assets) { if((Get-FileHash -LiteralPath $asset).Hash -ne (Get-FileHash -LiteralPath (Join-Path $verify (Split-Path -Leaf $asset))).Hash){throw 'Uploaded asset mismatch; index withheld'} }
+          gh release upload $env:RELEASE_TAG dist/arkcut-update.json --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) { throw 'Index upload failed' }
+          # A human must accept the HTTPS A/B tests and publish this draft.

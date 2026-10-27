@@ -1,0 +1,11 @@
+const fs=require('fs');
+exports.connect=async function(port=9222){
+ const pages=await(await fetch(`http://127.0.0.1:${port}/json/list`)).json();const ws=new WebSocket(pages[0].webSocketDebuggerUrl);await new Promise((resolve,reject)=>{ws.onopen=resolve;ws.onerror=reject});let id=0;const pending=new Map();const events=[];ws.onclose=()=>{for(const p of pending.values()){clearTimeout(p.timer);p.reject(Error('CDP connection closed'))}pending.clear()};
+ ws.onmessage=e=>{const v=JSON.parse(e.data);if(v.id){const p=pending.get(v.id);if(p){pending.delete(v.id);clearTimeout(p.timer);v.error?p.reject(v.error):p.resolve(v.result)}}else if(v.method==='Runtime.exceptionThrown')events.push(v.params)};
+ const send=(method,params={})=>new Promise((resolve,reject)=>{if(ws.readyState!==WebSocket.OPEN){reject(Error('CDP connection closed'));return}const key=++id;const timer=setTimeout(()=>{pending.delete(key);reject(Error(`CDP timeout ${method}`))},90000);pending.set(key,{resolve,reject,timer});ws.send(JSON.stringify({id:key,method,params}))});
+ const evaluate=async(expression)=>{const result=await send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true,userGesture:true});if(result.exceptionDetails)throw Error(JSON.stringify(result.exceptionDetails));return result.result.value};
+ const wait=async(expression,timeout=240000,observe)=>{const began=Date.now();while(Date.now()-began<timeout){if(await evaluate(expression))return;if(observe)await observe();await new Promise(r=>setTimeout(r,200))}throw Error('wait failed: '+expression+'\n'+await evaluate('document.body.innerText.slice(0,1700)'))};
+ const click=async(text)=>evaluate(`(()=>{const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()===${JSON.stringify(text)});if(!b)throw Error('Missing button '+${JSON.stringify(text)});if(b.disabled)throw Error('Disabled button '+b.textContent);b.click();return true})()`);
+ const screenshot=async(file)=>{const v=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});fs.writeFileSync(file,Buffer.from(v.data,'base64'))};
+ await send('Page.enable');await send('Runtime.enable');await send('Page.bringToFront');return{send,evaluate,wait,click,screenshot,events,close:()=>ws.close()};
+}

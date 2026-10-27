@@ -1,0 +1,29 @@
+:root{
+ --primary:#007BAF;--primary-hover:#006E9E;--primary-active:#00618D;--on-primary:#FFFFFF;--primary-disabled:#536875;--on-primary-disabled:#DCE4E9;
+ --bg:#1D1F20;--panel:#292C2E;--input:#232628;--video:#0D1012;--log:#111416;--surface-subtle:#292C2E;--selected-bg:#343739;--panel-shadow:none;
+ --text:#F5F5F5;--muted:#939B9F;--line:#45494B;--blue:#0098DC;--yellow:#FFD800;
+ --hover:#343739;--control-hover:#3D4042;--control-active:#464A4C;--blue-hover:#00A5ED;--blue-active:#0088C4;--on-blue:#0D1012;
+ --error:#C57E7E;--pause-border:#FFD800;--pause-fill:rgb(255 216 0 / 14%);--pause-selected:rgb(255 216 0 / 28%);--pause-hover:rgb(255 216 0 / 22%);--pause-candidate:rgb(255 216 0 / 6%);--selection-text:#FFD800;--playhead:#F5F5F5;
+ --on-video:#F5F5F5;--on-video-muted:#B6BFC4;--on-video-error:#FFC7C7;--video-line:#677882;--video-accent:#4FC9FF;--video-control:#182126;--video-hover:#233139;--video-active:#2B3E48;
+ --scrim:#000B;--video-scrim:#0D1012E6;--popover-shadow:0 12px 32px #0006;--modal-shadow:0 16px 48px #0008;
+ color:var(--text);background:var(--bg);color-scheme:dark;font-synthesis:none;
+ --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23939B9F' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 9L12 16L19 9'/%3E%3C/svg%3E");
+}
+:root[data-theme=light]{
+ --bg:#EDF2F7;--panel:#FFFFFF;--input:#F5F8FC;--log:#F3F6FA;--surface-subtle:#F8FAFD;--text:#263649;--muted:#5F7188;--line:#D5DFEA;--blue:#007BAF;
+ --hover:#F0F5FB;--control-hover:#E3EDF8;--control-active:#D4E4F4;--selected-bg:#E9F4FC;--blue-hover:#006F9E;--blue-active:#005F88;--on-blue:#FFFFFF;
+ --error:#A13F49;--pause-border:#9A7B00;--pause-fill:#FFF5BF;--pause-selected:#FFEA8B;--pause-hover:#FFEF9F;--pause-candidate:#FFFAE3;--selection-text:#806600;--playhead:#263649;
+ --panel-shadow:0 2px 8px rgb(35 64 96 / 4%);--scrim:#1C314C55;--popover-shadow:0 8px 24px #233F601A;--modal-shadow:0 16px 48px #233F6026;color-scheme:light;
+ --select-chevron:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23596168' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 9L12 16L19 9'/%3E%3C/svg%3E");
+}
+body,header,.monitor,.settings-panel,.main-actions,.modal,.popover,.log-panel,.log-header,.timeline,input,select,textarea{transition:background-color 140ms,color 140ms,border-color 140ms}
+.theme-switch{display:flex;gap:4px;margin-left:auto;flex-shrink:0}
+.theme-switch button{height:36px;gap:8px;background:transparent;border-color:transparent;color:var(--muted)}
+.theme-switch button[aria-pressed=true]{color:var(--text);background:var(--hover);border-color:var(--line)}
+.theme-switch+.settings-icon{margin-left:0}
+.monitor,.settings-panel{box-shadow:var(--panel-shadow)}.panel-title,.settings-tabs{background:var(--surface-subtle)}
+:root[data-theme=light] .theme-switch button[aria-pressed=true]{color:var(--blue);background:var(--panel);border-color:var(--line)}
+:root[data-theme=light] .settings-tabs button.active{color:var(--blue);background:var(--panel)}
+:root[data-theme=light] .music-item.selected{background:var(--selected-bg);border-color:#A9CCE5}
+@media(max-width:1120px){.theme-switch{margin-left:0}.theme-switch button{padding-inline:8px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

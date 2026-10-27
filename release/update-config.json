@@ -1,0 +1,16 @@
+{
+  "endpoint": "https://github.com/tydct666/ArcCut_TydCT/releases/latest/download/arkcut-update.json",
+  "assetPrefix": "https://github.com/tydct666/ArcCut_TydCT/releases/download/",
+  "redirectHosts": [
+    "github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com"
+  ],
+  "keys": [
+    {
+      "id": "9dd0594b7ae1e827",
+      "key": "sPpG4JODlqsDaGFgHEFfh7w5LE14w1ouwM7K4LP8k9w="
+    }
+  ],
+  "channel": "stable"
+}

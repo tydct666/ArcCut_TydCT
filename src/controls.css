@@ -1,0 +1,35 @@
+/* Shared system typography, control geometry and motion. */
+:root {
+ --font-ui:"Segoe UI Variable Text","Segoe UI","Microsoft YaHei UI","Microsoft YaHei",sans-serif;
+ --font-code:Consolas,"Microsoft YaHei UI",monospace;
+ --text-body:14px;--text-secondary:12px;--text-title:16px;--text-dialog:18px;
+ --weight-body:400;--weight-control:500;--weight-title:600;
+ --control-height:36px;--primary-height:40px;--control-radius:4px;
+ --space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-6:24px;
+ --motion-color:140ms;--motion-content:140ms;--motion-panel:160ms;
+ font-family:var(--font-ui);font-size:14px;font-weight:400;line-height:1.5;font-variant-numeric:tabular-nums;
+}
+*{box-sizing:border-box}body{margin:0;overflow:hidden}
+button,input,select,textarea{font:inherit}button,summary{touch-action:manipulation}
+button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:var(--control-height);padding:0 12px;border:1px solid var(--line);border-radius:var(--control-radius);background:var(--hover);color:var(--text);font-size:14px;font-weight:500;line-height:1.5;cursor:pointer;white-space:nowrap;transition:background-color var(--motion-color),color var(--motion-color),border-color var(--motion-color)}
+button:hover:enabled{background:var(--control-hover);border-color:var(--muted)}button:active:enabled{background:var(--control-active)}button:disabled{opacity:.38;cursor:not-allowed}button svg{display:block;flex-shrink:0}
+input,select,textarea{width:100%;min-width:0;height:var(--control-height);min-height:var(--control-height);padding:0 12px;border:1px solid var(--line);border-radius:var(--control-radius);background:var(--input);color:var(--text);font-size:14px;font-weight:400;line-height:1.5;transition:background-color var(--motion-color),color var(--motion-color),border-color var(--motion-color)}
+textarea{height:auto;min-height:72px;padding-block:8px;resize:vertical}input:hover:enabled,select:hover:enabled,textarea:hover:enabled{border-color:var(--muted)}input:disabled,select:disabled,textarea:disabled{opacity:.4}input[aria-invalid=true]{border-color:var(--error)}
+input[type=range]{height:24px;min-height:24px;padding:0;border:0;border-radius:0;background:transparent;accent-color:var(--blue);cursor:pointer}input[type=checkbox]{width:16px;height:16px;min-height:16px;padding:0;margin:0;accent-color:var(--blue)}
+option{background:var(--panel);color:var(--text)}select{appearance:none;background-image:var(--select-chevron);background-repeat:no-repeat;background-position:right 12px center;background-size:18px 18px;padding-right:36px}
+label{display:block;margin:0 0 16px;color:var(--muted);font-size:14px;font-weight:400}label input,label select{display:block;margin-top:8px}label b{float:right;color:var(--text);font-weight:400}
+small,.hint{font-size:12px;font-weight:400;line-height:1.5;color:var(--muted)}label>small{display:block;margin-top:4px}p{line-height:1.5}
+h2{font-size:18px;font-weight:600;line-height:1.5;margin:0 0 16px}h3{font-size:16px;font-weight:600;line-height:1.5;margin:0 0 16px}
+code{font:inherit;font-variant-numeric:tabular-nums}kbd{font:12px var(--font-code)}
+summary{cursor:pointer;list-style:none;min-height:36px;display:flex;align-items:center;font-size:14px;font-weight:500;color:var(--muted)}summary::-webkit-details-marker{display:none}summary::before{content:none}
+.ui-button{display:inline-flex;align-items:center;justify-content:center;gap:8px}.ui-button>span{min-width:0}.ui-icon{display:block;width:18px;height:18px;flex:0 0 18px}
+.icon-button,.icon-summary{display:inline-flex;align-items:center;justify-content:center;width:36px;min-width:36px;height:36px;min-height:36px;padding:0;flex:0 0 36px;border-radius:4px}.icon-summary{border:1px solid transparent;color:var(--text)}.icon-summary:hover{background:var(--hover);border-color:var(--line)}.icon-summary:active{background:var(--control-active)}
+.disclosure-summary{gap:8px}.disclosure-chevron{transform:rotate(-90deg);transition:transform 140ms}details[open]>.disclosure-summary>.disclosure-chevron{transform:rotate(0)}
+.primary{height:40px;min-height:40px;font-weight:500;color:var(--on-primary);background:var(--primary);border-color:var(--primary)}.primary:hover:enabled{color:var(--on-primary);background:var(--primary-hover);border-color:var(--primary-hover)}.primary:active:enabled{color:var(--on-primary);background:var(--primary-active);border-color:var(--primary-active)}.primary:disabled{opacity:1;background:var(--primary-disabled);border-color:var(--primary-disabled);color:var(--on-primary-disabled)}
+.primary[aria-busy=true]{position:relative;isolation:isolate;overflow:hidden;background:var(--primary-active);border-color:var(--primary-active);color:var(--on-primary)}.primary[aria-busy=true]::after{content:'';position:absolute;inset:auto 0 0;height:2px;background:#FFFFFF55;animation:primary-busy 1.2s ease-in-out infinite;pointer-events:none}
+/* H05 removes focus decoration only; business selection and error borders remain. */
+*:focus,*:focus-visible,*:focus-within{outline:none!important}select:open{border-color:var(--line)}
+@keyframes primary-busy{50%{opacity:.25}}@keyframes content-in{from{opacity:.65}to{opacity:1}}@keyframes panel-in{from{opacity:.6;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+.play-glyph{animation:content-in 140ms}details[open]>.disclosure-summary~:not(summary){animation:panel-in 160ms}
+@media(forced-colors:active){select{appearance:auto;background-image:none}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}

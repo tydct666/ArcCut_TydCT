@@ -1,0 +1,28 @@
+{
+  "name": "arkcut",
+  "version": "0.17.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node scripts/version.cjs && tsc && vite build",
+    "tauri": "tauri",
+    "desktop": "tauri dev",
+    "package": "powershell -ExecutionPolicy Bypass -File scripts/package.ps1"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@tauri-apps/plugin-dialog": "^2.4.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.10",
+    "tailwindcss": "^4.1.14",
+    "@tailwindcss/vite": "^4.1.14"
+  }
+}

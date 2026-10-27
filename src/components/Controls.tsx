@@ -1,0 +1,6 @@
+import type{ButtonHTMLAttributes,HTMLAttributes,ReactNode}from 'react';
+import{Icon,type IconName}from '../icons';
+export function Button({icon,children,className='',...props}:ButtonHTMLAttributes<HTMLButtonElement>&{icon?:IconName}){return <button type="button" className={`ui-button ${className}`} {...props}>{icon&&<Icon name={icon}/>}<span>{children}</span></button>}
+export function IconButton({icon,label,children,className='',...props}:ButtonHTMLAttributes<HTMLButtonElement>&{icon?:IconName;label:string}){return <button type="button" title={label} aria-label={label} className={`icon-button ${className}`} {...props}>{icon?<Icon name={icon}/>:children}</button>}
+export function DisclosureSummary({children,className='',...props}:HTMLAttributes<HTMLElement>){return <summary className={`disclosure-summary ${className}`} {...props}><Icon name="chevron" className="disclosure-chevron"/><span>{children}</span></summary>}
+export function MenuSummary({label,icon='more',children,className='',...props}:HTMLAttributes<HTMLElement>&{label:string;icon?:IconName;children?:ReactNode}){return <summary title={label} aria-label={label} className={`icon-summary ${className}`} {...props}><Icon name={icon}/>{children}</summary>}

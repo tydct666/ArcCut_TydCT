@@ -1,0 +1,50 @@
+[package]
+name = "arkcut"
+version = "0.17.1"
+edition = "2021"
+description = "Local deterministic video editing for Arknights recordings"
+license = "MIT"
+
+[lib]
+name = "arkcut_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "arkcut"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "arkcut-cli"
+path = "src/cli.rs"
+
+[[bin]]
+name = "arkcut-updater"
+path = "src/updater_main.rs"
+
+[features]
+default = ["smart-cut"]
+desktop = ["dep:tauri", "dep:tauri-plugin-dialog", "dep:tauri-build", "dep:windows-sys"]
+custom-protocol = ["tauri/custom-protocol"]
+resource-test-hooks = []
+update-test-hooks = []
+component-test-hooks = []
+smart-cut = []
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4", "serde"] }
+ed25519-dalek = "=3.0.0"
+base64 = "=0.22.1"
+semver = "=1.0.28"
+zip = { version = "=9.1.0", default-features = false, features = ["deflate"] }
+reqwest = { version = "=0.13.5", default-features = false, features = ["blocking", "native-tls"] }
+tokio = { version = "=1.54.0", features = ["rt", "time"] }
+tauri = { version = "2", optional = true, features = ["protocol-asset"] }
+tauri-plugin-dialog = { version = "2", optional = true }
+windows-sys = { version = "=0.61.2", optional = true, features = ["Win32_UI_Controls", "Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
+
+[build-dependencies]
+tauri-build = { version = "2", optional = true }
