@@ -62,6 +62,29 @@ class ConsistencyTests(unittest.TestCase):
     def test_coherent_artifacts(self):
         self.assertEqual(self.verify()['status'], 'passed')
 
+    def test_upload_git_history_is_local_metadata(self):
+        git = self.upload / '.git'
+        git.mkdir()
+        (git / 'HEAD').write_text('ref: refs/heads/main\n', encoding='utf8')
+        self.assertEqual(self.verify()['status'], 'passed')
+        self.assertIn('.git/HEAD', CHECK.directory_inventory(self.upload))
+
+    def test_upload_worktree_git_file_is_local_metadata(self):
+        (self.upload / '.git').write_text('gitdir: ../metadata\n', encoding='utf8')
+        self.assertEqual(self.verify()['status'], 'passed')
+
+    def test_nested_git_content_still_counts_as_extra_source(self):
+        nested = self.upload / 'nested' / '.git'
+        nested.mkdir(parents=True)
+        (nested / 'HEAD').write_text('unexpected nested repository', encoding='utf8')
+        with self.assertRaisesRegex(ValueError, 'Upload directory inventory mismatch'):
+            self.verify()
+
+    def test_source_zip_git_metadata_is_rejected(self):
+        self.write_zip(self.source, {'main.ts': b'const version = 1;', '.git/HEAD': b'local metadata'})
+        with self.assertRaisesRegex(ValueError, 'Standalone source ZIP inventory mismatch'):
+            self.verify()
+
     def test_utf8_pipe_with_chinese_paths_under_gbk_locale(self):
         name = 'docs/用户指南.md'
         guide = self.upload / name

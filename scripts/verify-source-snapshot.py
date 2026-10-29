@@ -54,14 +54,23 @@ def zip_inventory(archive, prefix=''):
     return result
 
 
-def directory_inventory(directory):
+def directory_inventory(directory, exclude_root_git=False):
     result, total = {}, 0
     directory = pathlib.Path(directory)
     if not directory.is_dir() or directory.is_symlink() or getattr(directory, 'is_junction', lambda: False)():
         raise ValueError('Missing or linked upload directory')
-    for item in directory.rglob('*'):
+    pending = list(directory.iterdir())
+    while pending:
+        item = pending.pop()
+        # The upload mirror may already be a Git checkout. Metadata is local;
+        # source archives and package inventories still reject every extra file.
+        if exclude_root_git and item.parent == directory and item.name == '.git':
+            continue
         if item.is_symlink() or getattr(item, 'is_junction', lambda: False)():
             raise ValueError('Linked upload entry')
+        if item.is_dir():
+            pending.extend(item.iterdir())
+            continue
         if not item.is_file():
             continue
         total += item.stat().st_size
@@ -99,7 +108,7 @@ def verify(stage, release_zip, source_zip, upload, expected):
     source_files = expected_inventory(expected['sourceFiles'])
     package_files = expected_inventory(expected['packageFiles'])
     embedded = stage / 'sources' / source_zip.name
-    compare(directory_inventory(upload), source_files, 'Upload directory')
+    compare(directory_inventory(upload, exclude_root_git=True), source_files, 'Upload directory')
     compare(zip_inventory(source_zip), source_files, 'Standalone source ZIP')
     compare(zip_inventory(embedded), source_files, 'Embedded source ZIP')
     compare(zip_inventory(release_zip, stage.name + '/'), package_files, 'Release ZIP')

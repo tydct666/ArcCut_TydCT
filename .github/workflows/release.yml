@@ -40,6 +40,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Committed distribution materials failed verification' }
           $commit=git rev-parse HEAD
           "ARKCUT_SOURCE_COMMIT=$commit" >> $env:GITHUB_ENV
+      - name: Prepare locked media test components
+        shell: pwsh
+        run: ./scripts/bootstrap-runtime.ps1
       - name: Locked build and tests
         shell: pwsh
         run: |

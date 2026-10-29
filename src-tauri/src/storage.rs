@@ -185,9 +185,26 @@ fn active_paths(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 fn same_path(a: &Path, b: &Path) -> bool {
-    a.to_string_lossy()
-        .trim_start_matches("\\\\?\\")
-        .eq_ignore_ascii_case(b.to_string_lossy().trim_start_matches("\\\\?\\"))
+    fn same_spelling(a: &Path, b: &Path) -> bool {
+        a.to_string_lossy()
+            .trim_start_matches("\\\\?\\")
+            .eq_ignore_ascii_case(b.to_string_lossy().trim_start_matches("\\\\?\\"))
+    }
+    if same_spelling(a, b) {
+        return true;
+    }
+    // Leases use canonical parents, while callers may use short Windows names
+    // or other parent aliases. A lease also protects a file before it exists.
+    let resolve = |path: &Path| {
+        fs::canonicalize(path).ok().or_else(|| {
+            let parent = fs::canonicalize(path.parent()?).ok()?;
+            Some(parent.join(path.file_name()?))
+        })
+    };
+    match (resolve(a), resolve(b)) {
+        (Some(a), Some(b)) => same_spelling(&a, &b),
+        _ => false,
+    }
 }
 fn protected(path: &Path, pinned: &[String], active: &[PathBuf]) -> bool {
     pinned.iter().any(|p| same_path(Path::new(p), path))
@@ -957,6 +974,37 @@ mod resource_tests {
         drop(guard);
         quota(&dir, 0, 128 * 1024, &[]).unwrap();
         assert!(!active.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn active_paths_protect_parent_aliases_before_and_after_creation() {
+        let root = fixture();
+        let dir = root.join("project");
+        fs::create_dir(&dir).unwrap();
+        // Canonical leases must match callers using another spelling of the
+        // existing parent, including Windows runner TEMP paths with 8.3 names.
+        let alias = dir.join("..").join("project");
+        let target = alias.join("active.mp4");
+        let guard = active_file(&target).unwrap();
+        let paths = active_paths(&dir);
+        assert_eq!(paths.len(), 1);
+        assert!(!target.exists());
+        assert!(protected(&target, &[], &paths));
+        assert!(protected(&dir.join("active.mp4"), &[], &paths));
+        assert!(!protected(&alias.join("other.mp4"), &[], &paths));
+        let temp = temp_file(&alias, "alias").unwrap();
+        fs::write(temp.path(), b"owned temporary").unwrap();
+        assert!(protected(temp.path(), &[], &active_paths(&dir)));
+        drop(temp);
+        fs::write(&target, b"active cache").unwrap();
+        assert!(protected(&target, &[], &paths));
+        assert!(protected(
+            &dir.join("active.mp4"),
+            &[target.to_string_lossy().into_owned()],
+            &[]
+        ));
+        drop(guard);
+        assert!(active_paths(&dir).is_empty());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
