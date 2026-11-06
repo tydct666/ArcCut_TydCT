@@ -159,7 +159,7 @@ impl Default for Detection {
         Self {
             geometry: None,
               status: detection_unknown(),
-              version: "ui-events-8-transitions-1".into(),
+              version: "ui-events-8-transitions-3".into(),
             scan_hz: 8,
             min_pause_us: 250000,
             activity_db: -40.,

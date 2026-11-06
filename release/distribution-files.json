@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "productVersion": "0.17.1",
+  "productVersion": "0.17.5",
   "reviewedAt": "2026-10-25",
   "status": "complete",
   "distributionApproved": true,
@@ -35,7 +35,7 @@
       "bytes": 732,
       "sha256": "d095b19a06eff2fba95f965086d5419d7b61e627e6a9a9a3cf776de6a608e5cf",
       "component": "ArkCut distribution documentation",
-      "version": "0.17.1",
+      "version": "0.17.4",
       "license": "MIT",
       "source": "Rebuilt by scripts/generate-distribution-docs.cjs from the locked Windows and frontend dependency graph"
     },
@@ -53,7 +53,7 @@
       "bytes": 2839,
       "sha256": "929269d4c032bada4495968698de8dbcd068933c8122f65e993ad085a4ecd0ab",
       "component": "ArkCut distribution documentation",
-      "version": "0.17.1",
+      "version": "0.17.4",
       "license": "MIT",
       "source": "Maintainer-reviewed provenance and distribution documentation; retained with the locked materials"
     },
@@ -62,7 +62,7 @@
       "bytes": 1489,
       "sha256": "c676008c9946fa4f5b99274bd1a424193a3b8c373c211e10a65e639055a6aafd",
       "component": "ArkCut distribution documentation",
-      "version": "0.17.1",
+      "version": "0.17.4",
       "license": "MIT",
       "source": "Maintainer-reviewed provenance and distribution documentation; retained with the locked materials"
     },
@@ -71,7 +71,7 @@
       "bytes": 66640,
       "sha256": "333d8c3e731c41465a69665ff7678664723eedc69c64366dc84c5f4f54ed7d73",
       "component": "ArkCut distribution documentation",
-      "version": "0.17.1",
+      "version": "0.17.4",
       "license": "MIT",
       "source": "Rebuilt by scripts/generate-distribution-docs.cjs from the locked Windows and frontend dependency graph"
     },
@@ -179,7 +179,7 @@
       "bytes": 1836,
       "sha256": "8de20d63e25c087bf2e81a50601259a88a4b354d15852c240d0815b939c6d856",
       "component": "ArkCut distribution documentation",
-      "version": "0.17.1",
+      "version": "0.17.4",
       "license": "MIT",
       "source": "Rebuilt by scripts/generate-distribution-docs.cjs from the locked Windows and frontend dependency graph"
     }

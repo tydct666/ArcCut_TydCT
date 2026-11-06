@@ -27,7 +27,7 @@ def main():
     for name in ['LICENSE','README.txt']:shutil.copyfile(a.media_notices/name,stage/'media'/name)
     for name in ['Microsoft-WebView2-Fixed-Runtime-License.txt','Microsoft-WebView2-Fixed-Runtime-License.html']:
         shutil.copyfile(ROOT/'distribution-support/licenses/non-media'/name,stage/'licenses'/name)
-    (stage/'README.md').write_text('# ArkCut 完整离线包\n\n解压全部文件后，双击 **ArkCut.exe** 即可使用，无需联网下载运行组件。\n\n请保留 media、WebView2、licenses、sources 和 docs 文件夹。不要直接覆盖保存着项目的旧程序目录；项目可通过“打开项目”继续编辑。\n\n本包与同版本轻量包使用相同程序和源码。使用方法见 docs/用户指南.md。本地使用包尚未完成干净 Windows 10/11 和真实 4/8 GB 机器验收。\n',encoding='utf8')
+    shutil.copyfile(ROOT/'release/offline-README.md',stage/'README.md')
     manifest.update(distributionMode='offline-local',webView2=lock['version'],releaseStatus='local-use',distributionSourceAudit='offline-public-distribution-not-verified')
     manifest['files']=[dict(path=str(p.relative_to(stage)).replace('\\','/'),bytes=p.stat().st_size,sha256=sha(p)) for p in sorted(stage.rglob('*')) if p.is_file()]
     manifest['unpackedBytes']=sum(v['bytes'] for v in manifest['files']);(stage/'manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2),encoding='utf8')

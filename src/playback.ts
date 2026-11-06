@@ -1,5 +1,5 @@
 export type PlayerStatus='preparing'|'paused'|'playing'|'ended'|'failed';
-export interface PlaybackRequest {id:number;projectId:string;revision:number;entryId:string;positionUs:number;play:boolean;reason:string;ticket?:number;rangeUs?:[number,number]}
+export interface PlaybackRequest {id:number;projectId:string;revision:number;entryId:string;positionUs:number;play:boolean;reason:string;ticket?:number}
 export interface PlayerRange {start:number;end:number;offsetUs:number}
 
 // One controller owns seek completion, the logical clock, and every end guard.

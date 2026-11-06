@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing immutable version tag, e.g. v0.17.1
+        description: Existing immutable version tag, e.g. v0.17.2
         required: true
         type: string
 permissions:

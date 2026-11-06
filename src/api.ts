@@ -19,6 +19,15 @@ export const formatChangeReason=(p:import('./types').Project)=>{
  return changes.length?`${changes.join('，')}：${reasons.join('；')}`:'';
 };
 export const sourceOutput=(p:import('./types').Project,value:string)=>value.replace(/\.[^.\\/]+$/,'')+'.'+container(p);
+// Local wall-clock time makes repeated exports identifiable without stacking
+// timestamps on a previously exported name. Milliseconds separate quick retries.
+export const timestampedOutput=(value:string,now=new Date())=>{
+ const pad=(n:number,width=2)=>String(n).padStart(width,'0');
+ const stamp=`${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${pad(now.getMilliseconds(),3)}`;
+ const split=Math.max(value.lastIndexOf('/'),value.lastIndexOf('\\')),dir=value.slice(0,split+1),name=value.slice(split+1),dot=name.lastIndexOf('.');
+ const stem=dot>0?name.slice(0,dot):name,ext=dot>0?name.slice(dot):'';
+ return dir+stem.replace(/_\d{8}_\d{6}(?:_\d{3})?$/,'')+'_'+stamp+ext;
+};
 const displayCache=new WeakMap<import('./types').Media,Map<number,string>>();
 export function displayInfo(p:import('./types').Project){const old=displayCache.get(p.source)?.get(p.videoIndex);if(old)return old;const s=p.source.streams.find(s=>s.index===p.videoIndex);if(!s)return '—';const rotated=p.source.warnings.some(w=>w.includes('旋转')),pts=p.source.framePts,rate=pts.length*1e6/p.source.durationUs;let min=Infinity,max=0;for(let i=1;i<pts.length;i++){const step=pts[i]-pts[i-1];min=Math.min(min,step);max=Math.max(max,step)}const text=`${rotated?s.height:s.width}×${rotated?s.width:s.height} · ${max-min>1000?'VFR':'CFR'} ${rate.toFixed(2)} fps · ${timecode(p.source.durationUs)}`;const cache=displayCache.get(p.source)||new Map<number,string>();cache.set(p.videoIndex,text);displayCache.set(p.source,cache);return text;}
 

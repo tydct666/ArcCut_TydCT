@@ -763,17 +763,19 @@ pub fn try_render(
     )?;
     // Cache only a video intermediate that participated in a complete validation.
     let store_cache = (|| -> Result<(), String> {
-        let audit = r
+        let issues = r
             .validated_audit
             .lock()
             .unwrap()
             .as_ref()
-            .map(|(_, a)| a.clone());
-        let issues = audit
-            .as_ref()
-            .map(|a| crate::repair::audit_issues(p, plan, a))
+            .map(|(_, audit)| crate::repair::audit_issues(p, plan, audit))
             .unwrap_or_default();
-        for (index, key, path, meta, piece_config, start, end) in pending_piece_cache {
+        let count = pending_piece_cache.len() as i64;
+        for (n, (index, key, path, meta, piece_config, start, end)) in
+            pending_piece_cache.into_iter().enumerate()
+        {
+            r.check()?;
+            r.measure("smartPieceCache", n as i64, Some(count), "pieces", "整理已检查的视频片段");
             // Full-file decoding succeeded, but an implicated cut is not passed.
             // Keep only pieces outside every failed/uncertain seam dependency.
             if issues.iter().any(|v| {
@@ -786,7 +788,6 @@ pub fn try_render(
             }) {
                 continue;
             }
-            r.check()?;
             let store = (|| -> Result<(), String> {
                 let piece = &pieces[index];
                 let bytes = fs::metadata(piece.path()).map_err(io)?.len();
@@ -825,9 +826,13 @@ pub fn try_render(
                 (r.progress)(&format!("WARN: 分段缓存未保留：{e}"), None);
             }
         }
+        if count > 0 {
+            r.measure("smartPieceCache", count, Some(count), "pieces", "整理已检查的视频片段");
+        }
         if !issues.is_empty() {
             return Ok(());
         }
+        r.measure("smartVideoCache", 0, None, "file", "保存下次导出可复用的视频");
         let bytes = fs::metadata(joined.path()).map_err(io)?.len();
         // Optional reuse must not turn an already validated export into a
         // failure just because there is no room for an additional cache copy.

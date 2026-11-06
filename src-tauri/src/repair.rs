@@ -7,7 +7,7 @@ use std::{
     io::Read,
     path::{Path, PathBuf},
 };
-pub const RULE: &str = "s04-full-decode-v3-ui8-transitions1";
+pub const RULE: &str = "s04-full-decode-v3-ui8-transitions3";
 
 pub fn identity(r: &Runner, path: &str) -> Result<String, String> {
     let fingerprint = crate::media::fingerprint(path)?;

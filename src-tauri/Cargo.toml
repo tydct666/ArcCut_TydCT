@@ -1,6 +1,6 @@
 [package]
 name = "arkcut"
-version = "0.17.1"
+version = "0.17.5"
 edition = "2021"
 description = "Local deterministic video editing for Arknights recordings"
 license = "MIT"

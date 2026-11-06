@@ -2,8 +2,7 @@ node_modules/
 web-dist/
 src-tauri/target/
 tools/
-dist/*
-!dist/.gitkeep
+/dist/
 tests/fixtures/generated/
 tests/results/
 *.tmp
@@ -51,10 +50,44 @@ distribution-support/**
 !distribution-support/sources/non-media/SOURCE-MANIFEST.json
 __pycache__/
 *.pyc
-# Local diagnostics; public source export uses release/source-files.json.
-docs/environment.json
-docs/capabilities.json
-docs/source-probe.json
-docs/game-result-summary.json
-docs/*验收*.md
-docs/*验证快照.json
+# Local projects, deliverables and results are never source.
+*.arkcut.json
+/tests/*.log
+/tests/release-verification.json
+/tests/source-audit-check.json
+/需求文档.md
+# Working notes, screenshots, and machine diagnostics stay outside public docs.
+/docs/*
+!/docs/用户指南.md
+!/docs/构建与发布.md
+!/docs/更新与恢复.md
+!/docs/更新维护.md
+# Historical campaigns run locally. The shared writer helper is a public test dependency.
+/tests/revision*
+!/tests/revision4-writer.cjs
+# Workstation-only diagnostics, material-generation tools and reports.
+/scripts/build-detection-profile.py
+/scripts/build-event-profile.py
+/scripts/deliver-source.py
+/scripts/package-light.ps1
+/scripts/report-evidence.py
+/scripts/verify-package.py
+/scripts/verify-pc-profile.py
+/scripts/verify-source.py
+/tests/audio-*-diagnostics.ps1
+/tests/cdp-diagnose.cjs
+/tests/cdp.cjs
+/tests/debug-audio.py
+/tests/desktop-launcher.rs
+/tests/desktop-ui.cjs
+/tests/game-validation.py
+/tests/inspect-boundaries.py
+/tests/long-run.py
+/tests/more-verification.py
+/tests/offline-package-smoke.cjs
+/tests/pause-transition-comparisons.py
+/tests/pause-transition-report.py
+/tests/ui.cjs
+/tests/update-final-audit.py
+/tests/update-readonly.cjs
+/tests/verify.py

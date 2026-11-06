@@ -1,6 +1,6 @@
 use crate::{model::*, process::*};
 use serde::{Deserialize, Serialize};
-pub const ALGORITHM_VERSION: &str = "ui-events-8-transitions-1";
+pub const ALGORITHM_VERSION: &str = "ui-events-8-transitions-3";
 const TRANSITION_PRE_US: Us = 300_000;
 const TRANSITION_POST_US: Us = 200_000;
 #[derive(Deserialize)]
@@ -907,25 +907,21 @@ pub fn check_full_output(
             )
         })
         .collect();
-    let _memory = r.reserve_memory(
-        (cuts.len() as u64).saturating_mul(1024 * 1024),
-        "full-cut-audit",
-    )?;
+    // Grow the audit allowance with observed frames. A short, low-FPS cut
+    // window need not reserve the same memory as 1,024 dense samples.
+    let mut audit_memory = Vec::new();
+    let mut stored_samples = 0usize;
     let mut observed: Vec<Vec<Sample>> = vec![vec![]; cuts.len()];
     let mut transitions = TransitionAudit::new(cuts.iter().map(|c|c.output_us).collect(), &profile);
     let (tw,th)=transition_dimensions(&profile);
     let _transition_memory=r.reserve_memory((tw*th*1152) as u64,"输出过渡检查")?;
     let scale=p.detection.geometry.as_ref().map(|g|g.scale).unwrap_or(1.);
-    let select = if windows.is_empty() {
-        "0".into()
-    } else {
-        windows
-            .iter()
-            .map(|(a, b)| format!("gte(pts,{a})*lt(pts,{b})"))
-            .collect::<Vec<_>>()
-            .join("+")
-    };
+    let select = crate::render::filter_sum(&windows.iter()
+        .map(|(a, b)| format!("gte(pts,{a})*lt(pts,{b})")).collect::<Vec<_>>());
     let filter=format!("[0:v:0]split=2[complete][check];[check]settb=expr=1/1000000,select='{select}',{},format=gray,showinfo@arkcut_pts=checksum=0[audit]",crop_filter(p,&profile));
+    // Windows also limits the length of a child process's command line.
+    let script = crate::storage::temp_file(&crate::storage::index_dir()?, "cut-filter")?;
+    std::fs::write(script.path(), filter).map_err(|e| format!("无法写入切点检查条件：{e}"))?;
     r.measure(
         "outputValidate",
         0,
@@ -946,8 +942,8 @@ pub fn check_full_output(
             "128",
             "-i",
             &path.to_string_lossy(),
-            "-filter_complex",
-            &filter,
+            "-/filter_complex",
+            &script.path().to_string_lossy(),
             "-map",
             "[complete]",
             "-map",
@@ -986,7 +982,13 @@ pub fn check_full_output(
                             "RESOURCE_MEMORY: 单个切点帧数超出安全检查容量，已停止导出".into()
                         );
                     }
+                    // Includes evidence keys/values in the serialized report.
+                    if stored_samples % 256 == 0 {
+                        let sample_bytes = 1024 + profile.evidence.len() as u64 * 256;
+                        audit_memory.push(r.reserve_memory(256 * sample_bytes, "full-cut-audit")?);
+                    }
                     observed[i].push(sample.clone());
+                    stored_samples += 1;
                 }
             }
             Ok(())
@@ -1006,7 +1008,8 @@ pub fn check_full_output(
         let automatic=automatic_cut(p,cut.start_us,cut.end_us);
         let removed=transitions.results[i]["removedFrames"].as_u64().unwrap_or(0) as usize;
         if automatic {transition_residuals+=removed;} else {uncertain+=removed;}
-        checks.push(serde_json::json!({"outputUs":cut.output_us,"sourceStartUs":cut.start_us,"sourceEndUs":cut.end_us,"lastKeptSourceUs":before.checked_sub(1).and_then(|n|p.source.frame_pts.get(n)),"firstKeptSourceUs":p.source.frame_pts.get(after),"frames":observed[i],"transition":transitions.results[i],"transitionAutomatic":automatic}));
+        let frames = std::mem::take(&mut observed[i]);
+        checks.push(serde_json::json!({"outputUs":cut.output_us,"sourceStartUs":cut.start_us,"sourceEndUs":cut.end_us,"lastKeptSourceUs":before.checked_sub(1).and_then(|n|p.source.frame_pts.get(n)),"firstKeptSourceUs":p.source.frame_pts.get(after),"frames":frames,"transition":transitions.results[i],"transitionAutomatic":automatic}));
     }
     r.measure(
         "cutFrameValidate",
@@ -1017,9 +1020,9 @@ pub fn check_full_output(
     );
     let (residuals, pause_candidates) = unique_pause_counts(&checks);
     uncertain += pause_candidates;
-    Ok(
-        serde_json::json!({"profile":profile.version,"transitionVersion":ALGORITHM_VERSION,"residualFrames":residuals,"transitionResidualFrames":transition_residuals,"candidateFrames":uncertain,"checks":checks,"needsReview":residuals>0||transition_residuals>0||uncertain>0}),
-    )
+    let mut report = serde_json::json!({"profile":profile.version,"transitionVersion":ALGORITHM_VERSION,"residualFrames":residuals,"transitionResidualFrames":transition_residuals,"candidateFrames":uncertain,"needsReview":residuals>0||transition_residuals>0||uncertain>0});
+    report["checks"] = serde_json::Value::Array(checks);
+    Ok(report)
 }
 pub fn check_output(
     r: &Runner,

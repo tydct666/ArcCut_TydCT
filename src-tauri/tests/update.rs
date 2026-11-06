@@ -69,13 +69,16 @@ fn tree(p: &Path, version: &str) -> Vec<OwnedFile> {
     transaction::old_files(p).unwrap()
 }
 fn fixture(p: &Path) -> (PathBuf, Release, Envelope) {
+    fixture_versions(p, "0.17.0", "0.17.1")
+}
+fn fixture_versions(p: &Path, old_version: &str, new_version: &str) -> (PathBuf, Release, Envelope) {
     let root = p.join("中文 空格 app");
-    tree(&root, "0.17.0");
+    tree(&root, old_version);
     fs::create_dir_all(root.join("项目存档")).unwrap();
     fs::write(root.join("项目存档/user.json"), b"archive-original").unwrap();
     fs::write(root.join("recording.mp4"), b"original-media").unwrap();
     let new = p.join("new");
-    let files = tree(&new, "0.17.1");
+    let files = tree(&new, new_version);
     let dir = transaction::control(&root).unwrap();
     let archive = dir.join("archive.zip");
     let mut z = zip::ZipWriter::new(fs::File::create(&archive).unwrap());
@@ -91,10 +94,10 @@ fn fixture(p: &Path) -> (PathBuf, Release, Envelope) {
     let r = Release {
         schema: 1,
         product: "ArkCut".into(),
-        version: "0.17.1".into(),
+        version: new_version.into(),
         platform: "windows-x86_64".into(),
         channel: "stable".into(),
-        min_updater: "0.17.0".into(),
+        min_updater: old_version.into(),
         data_schema: 1,
         notes: "test".into(),
         source_commit: "0".repeat(40),
@@ -181,7 +184,11 @@ fn transient_record_reader_does_not_break_atomic_commit() {
 
 #[test]
 fn manual_check_rechecks_a_cached_release_while_automatic_defers() {
-    let p=temp();let(root,_,_)=fixture(&p);let mut c=config();
+    let p = temp();
+    let current = semver::Version::parse(arkcut_core::update::VERSION).unwrap();
+    let next = format!("{}.{}.{}", current.major, current.minor, current.patch + 1);
+    let (root, _, _) = fixture_versions(&p, arkcut_core::update::VERSION, &next);
+    let mut c=config();
     c.endpoint="https://127.0.0.1:1/index".into();c.redirect_hosts.push("127.0.0.1".into());
     let updater=arkcut_core::update::Updater::new(root,c);
     assert_eq!(updater.status().status,"ready");

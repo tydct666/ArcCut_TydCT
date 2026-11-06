@@ -1,6 +1,6 @@
 {
   "name": "arkcut",
-  "version": "0.17.1",
+  "version": "0.17.5",
   "private": true,
   "type": "module",
   "scripts": {

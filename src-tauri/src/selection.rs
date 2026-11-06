@@ -29,6 +29,10 @@ const PC_X: Glyph = Glyph { x: 557., y: 13., rows: &[
     "...#### .......", "....###........", "....###........", "...## ##.......",
     ".. ##..##......", "..## .. ##.....", ". ##.... ##....", ".  ......   ...",
 ] };
+// The centred PC speed label moves its X two layout pixels left at 1X.
+// This is a second known glyph placement, not permission to classify missing
+// controls as normal. Both placements still require the lower running arrow.
+const PC_ONE_X: Glyph = Glyph { x: 555., y: 13., rows: PC_X.rows };
 const MOBILE_X: Glyph = Glyph { x: 535., y: 12., rows: &[
     "# .... # ...", " # .. ##....", ". # .## ....", ".. # # .....",
     "... ##......", "... ## .....", ".. #### ....", "..## .##....",
@@ -153,10 +157,11 @@ pub fn classify_detailed(gray:&[u8],width:usize,height:usize,scale:f64,pc:bool)-
     let mut result=SelectionEvidence{state:SelectionState::Unknown,normal_score:0.,selected_score:0.,menu_score:0.};
     if width<100 || height<100 || width.checked_mul(height)!=Some(gray.len()) || !scale.is_finite() || !(0.35..=3.).contains(&scale) {return result;}
     let normal=glyph(gray,width,height,scale,if pc{&PC_X}else{&MOBILE_X}).unwrap_or((0.,0.));
+    let one=if pc {glyph(gray,width,height,scale,&PC_ONE_X).unwrap_or((0.,0.))}else{(0.,0.)};
     let selected=glyph(gray,width,height,scale,if pc{&PC_SELECTED}else{&MOBILE_SELECTED}).unwrap_or((0.,0.));
-    result.normal_score=normal.0.max(0.)*normal.1;
+    result.normal_score=(normal.0.max(0.)*normal.1).max(one.0.max(0.)*one.1);
     result.selected_score=selected.0.max(0.)*selected.1;
-    let normal_pass=normal.0>=65. && normal.1>=0.78 && lower_arrow(gray,width,height,scale,pc);
+    let normal_pass=((normal.0>=65. && normal.1>=0.78)||(one.0>=65. && one.1>=0.78)) && lower_arrow(gray,width,height,scale,pc);
     let selected_pass=selected.0>=28. && selected.1>=0.72;
     if normal_pass && !selected_pass {result.state=SelectionState::Normal;}
     else if selected_pass && !normal_pass {
@@ -193,7 +198,7 @@ mod tests {
     }
     #[test]
     fn speed_glyph_needs_its_lower_arrow() {
-        for(pc,h,g)in [(true,360,&PC_X),(false,288,&MOBILE_X)] {
+        for(pc,h,g)in [(true,360,&PC_X),(true,360,&PC_ONE_X),(false,288,&MOBILE_X)] {
             let mut f=vec![35;640*h];paint_glyph(&mut f,640,g);
             assert_eq!(classify(&f,640,h,1.,pc),SelectionState::Unknown);
             let(x,y)=if pc{(558,29)}else{(537,26)};
@@ -207,6 +212,23 @@ mod tests {
         assert_eq!(classify(&f,640,360,1.,true),SelectionState::Unknown);
         diamond(&mut f,640,300.,165.);
         assert_eq!(classify(&f,640,360,1.,true),SelectionState::Selected);
+    }
+    #[test]
+    fn one_x_uses_right_anchor_and_layout_scale_at_different_aspect_ratios() {
+        let mut original=vec![35;640*360];
+        paint_glyph(&mut original,640,&PC_ONE_X);
+        for y in 29..32 {for x in 558..563 {original[y*640+x]=230;}}
+        for (w,h,scale) in [(640,360,1usize),(800,360,1),(960,540,1),(1280,720,2),(1600,720,2)] {
+            let mut resized=vec![35;w*h];
+            for y in 0..45*scale {for x in w-110*scale..w {
+                let sx=640-(w-x+scale-1)/scale;
+                resized[y*w+x]=original[y/scale*640+sx];
+            }}
+            assert_eq!(classify(&resized,w,h,scale as f64,true),SelectionState::Normal);
+            // Losing the arrow must not turn absence of selection into Normal.
+            for y in 27*scale..38*scale {for x in w-95*scale..w-60*scale {resized[y*w+x]=35;}}
+            assert_eq!(classify(&resized,w,h,scale as f64,true),SelectionState::Unknown);
+        }
     }
     #[test]
     fn menu_without_control_evidence_never_authorizes_deletion() {

@@ -23,7 +23,7 @@ import time
 import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "ui-events-8-transitions-1"
+VERSION = "ui-events-8-transitions-3"
 
 
 def read(path):

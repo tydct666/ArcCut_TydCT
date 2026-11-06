@@ -184,6 +184,16 @@ fn active_paths(dir: &Path) -> Vec<PathBuf> {
         .map(|lease| lease.path)
         .collect()
 }
+// Leases can precede their files and can use a different spelling of the parent.
+fn resolved_path(path: &Path) -> Option<PathBuf> {
+    fs::canonicalize(path).ok().or_else(|| {
+        Some(
+            fs::canonicalize(path.parent()?)
+                .ok()?
+                .join(path.file_name()?),
+        )
+    })
+}
 fn same_path(a: &Path, b: &Path) -> bool {
     fn same_spelling(a: &Path, b: &Path) -> bool {
         a.to_string_lossy()
@@ -193,15 +203,7 @@ fn same_path(a: &Path, b: &Path) -> bool {
     if same_spelling(a, b) {
         return true;
     }
-    // Leases use canonical parents, while callers may use short Windows names
-    // or other parent aliases. A lease also protects a file before it exists.
-    let resolve = |path: &Path| {
-        fs::canonicalize(path).ok().or_else(|| {
-            let parent = fs::canonicalize(path.parent()?).ok()?;
-            Some(parent.join(path.file_name()?))
-        })
-    };
-    match (resolve(a), resolve(b)) {
+    match (resolved_path(a), resolved_path(b)) {
         (Some(a), Some(b)) => same_spelling(&a, &b),
         _ => false,
     }
@@ -209,6 +211,38 @@ fn same_path(a: &Path, b: &Path) -> bool {
 fn protected(path: &Path, pinned: &[String], active: &[PathBuf]) -> bool {
     pinned.iter().any(|p| same_path(Path::new(p), path))
         || active.iter().any(|p| same_path(p, path))
+}
+// Eviction checks many names against the same locked directory. Resolve each
+// spelling once, including Windows short names and leases for future files.
+fn path_key(path: &Path) -> String {
+    let resolved = resolved_path(path);
+    resolved
+        .as_deref()
+        .unwrap_or(path)
+        .to_string_lossy()
+        .trim_start_matches("\\\\?\\")
+        .to_ascii_lowercase()
+}
+
+fn eviction_protection(dir: &Path, pinned: &[String]) -> Option<std::collections::HashSet<String>> {
+    let foreign_session = fs::File::open(dir.join(".session.json"))
+        .ok()
+        .filter(|f| f.metadata().is_ok_and(|m| m.len() <= 16384))
+        .and_then(|f| {
+            serde_json::from_reader::<_, serde_json::Value>(BufReader::new(f.take(16385))).ok()
+        })
+        .and_then(|v| v["pid"].as_u64())
+        .is_some_and(|pid| pid != std::process::id() as u64 && alive(pid as u32));
+    if foreign_session {
+        return None;
+    }
+    Some(
+        active_paths(dir)
+            .iter()
+            .map(|p| path_key(p))
+            .chain(pinned.iter().map(|p| path_key(Path::new(p))))
+            .collect(),
+    )
 }
 fn metadata_file(path: &Path) -> bool {
     path.file_name().is_some_and(|n| {
@@ -576,7 +610,7 @@ pub fn quota(dir: &Path, expected: u64, limit: u64, pinned: &[String]) -> Result
         return Err("CACHE_QUOTA: 预览预计超过缓存限额，请调整设置或缩短预览范围".into());
     }
     let mut files = vec![];
-    let mut total = 0;
+    let mut total = 0u64;
     for project in fs::read_dir(dir.parent().ok_or("无效缓存根目录")?).map_err(|e| e.to_string())?
     {
         let project = project.map_err(|e| e.to_string())?;
@@ -585,15 +619,6 @@ pub fn quota(dir: &Path, expected: u64, limit: u64, pinned: &[String]) -> Result
         {
             continue;
         }
-        let active = active_paths(&project.path());
-        let foreign_session = fs::File::open(project.path().join(".session.json"))
-            .ok()
-            .filter(|f| f.metadata().is_ok_and(|m| m.len() <= 16384))
-            .and_then(|f| {
-                serde_json::from_reader::<_, serde_json::Value>(BufReader::new(f.take(16385))).ok()
-            })
-            .and_then(|v| v["pid"].as_u64())
-            .is_some_and(|pid| pid != std::process::id() as u64 && alive(pid as u32));
         for e in fs::read_dir(project.path()).map_err(|e| e.to_string())? {
             let e = e.map_err(|e| e.to_string())?;
             if e.file_type().map_err(|e| e.to_string())?.is_symlink() {
@@ -603,26 +628,41 @@ pub fn quota(dir: &Path, expected: u64, limit: u64, pinned: &[String]) -> Result
             if !m.is_file() {
                 continue;
             }
-            total += m.len();
-            if !foreign_session
-                && e.path()
-                    .extension()
-                    .is_some_and(|s| s == "mp4" || s == "idx" || s == "json")
+            total = total.saturating_add(m.len());
+            if e.path()
+                .extension()
+                .is_some_and(|s| s == "mp4" || s == "idx" || s == "json")
                 && !metadata_file(&e.path())
-                && !protected(&e.path(), pinned, &active)
             {
                 files.push((m.modified().ok(), e.path(), m.len()));
             }
         }
     }
+    // A size-only admission needs neither leases nor eviction ordering.
+    if total.saturating_add(expected) <= limit {
+        return Ok(());
+    }
     files.sort_by_key(|x| x.0);
+    let mut eviction = None;
     for (_, path, size) in files {
         if total.saturating_add(expected) <= limit {
             break;
         }
         let parent = path.parent().ok_or("无效缓存路径")?;
-        let _maintenance = maintenance_lock(parent)?;
-        if protected(&path, pinned, &active_paths(parent)) {
+        if eviction.as_ref().is_none_or(|(dir, _, _)| dir != parent) {
+            // Release the previous lock first. Never hold two project locks.
+            drop(eviction.take());
+            let lock = maintenance_lock(parent)?;
+            eviction = Some((
+                parent.to_path_buf(),
+                lock,
+                eviction_protection(parent, pinned),
+            ));
+        }
+        let Some((_, _, Some(protected))) = &eviction else {
+            continue;
+        };
+        if protected.contains(&path_key(&path)) {
             continue;
         }
         if fs::remove_file(path).is_ok() {
@@ -952,6 +992,49 @@ mod resource_tests {
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
+    #[ignore = "Filesystem benchmark with 239 pieces and 478 active leases"]
+    fn quota_on_many_leased_export_pieces() {
+        let root = fixture();
+        let dir = root.join("project");
+        fs::create_dir(&dir).unwrap();
+        fs::write(dir.join(".arkcut-cache-v1"), b"owned").unwrap();
+        let mut leases = Vec::new();
+        let paths: Vec<_> = (0..239)
+            .map(|i| {
+                let video = dir.join(format!("smart-piece-{i}.mp4"));
+                let meta = video.with_extension("json");
+                leases.push(active_file(&video).unwrap());
+                leases.push(active_file(&meta).unwrap());
+                (video, meta)
+            })
+            .collect();
+        let mut quota_time = std::time::Duration::ZERO;
+        for (index, (video, meta)) in paths.iter().enumerate() {
+            fs::write(video, [42; 4096]).unwrap();
+            fs::write(meta, b"{}").unwrap();
+            let started = std::time::Instant::now();
+            quota(&dir, 65536, 64 * 1024 * 1024, &[]).unwrap();
+            let elapsed = started.elapsed();
+            quota_time += elapsed;
+            if [1, 99, 239].contains(&(index + 1)) {
+                println!(
+                    "pieces={} leases={} quota_us={}",
+                    index + 1,
+                    leases.len(),
+                    elapsed.as_micros()
+                );
+            }
+        }
+        println!("quota_calls={} total_us={}", paths.len(), quota_time.as_micros());
+        // Even under pressure an export lease still protects every piece.
+        assert!(quota(&dir, 0, 128, &[]).is_err());
+        assert!(paths
+            .iter()
+            .all(|(video, meta)| video.is_file() && meta.is_file()));
+        drop(leases);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn owned_temps_and_active_cache_files_are_protected() {
         let root = fixture();
         let dir = root.join("project");
@@ -965,15 +1048,21 @@ mod resource_tests {
         assert!(!temporary.exists());
         let active = dir.join("active.mp4");
         let old = dir.join("old.mp4");
+        let pinned = dir.join("pinned.mp4");
+        fs::write(&pinned, b"keep").unwrap();
+        let pinned_alias = dir.join("..").join("project").join("pinned.mp4");
+        let pins = [pinned_alias.to_string_lossy().into_owned()];
         fs::write(&active, vec![0; 256 * 1024]).unwrap();
         fs::write(&old, vec![0; 128 * 1024]).unwrap();
         let guard = active_file(&active).unwrap();
-        quota(&dir, 0, 300 * 1024, &[]).unwrap();
+        quota(&dir, 0, 300 * 1024, &pins).unwrap();
         assert!(active.exists());
+        assert!(pinned.exists());
         assert!(!old.exists());
         drop(guard);
-        quota(&dir, 0, 128 * 1024, &[]).unwrap();
+        quota(&dir, 0, 128 * 1024, &pins).unwrap();
         assert!(!active.exists());
+        assert!(pinned.exists());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]

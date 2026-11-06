@@ -776,7 +776,7 @@ impl Engine {
         } else {
             None
         };
-        self.render_item(
+        let mut result = self.render_item(
             r,
             &mut p,
             &mut plan,
@@ -784,7 +784,11 @@ impl Engine {
             op != "export",
             target.as_deref(),
             false,
-        )
+        )?;
+        if op == "export" && payload["summaryAudit"] == true {
+            result["audit"] = preview_audit_summary(&result["audit"]);
+        }
+        Ok(result)
     }
     pub fn busy(&self) -> bool {
         self.inner
@@ -1064,9 +1068,11 @@ impl Engine {
             } else {
                 export_record::digest_checked(&temp, || r.check())?
             };
-            let mut record = json!({"rule":repair::RULE,"bytes":bytes,"sha256":sha,"audit":audit,"revised":before.revision!=p.revision});
+            let mut record = json!({"rule":repair::RULE,"bytes":bytes,"sha256":sha,"revised":before.revision!=p.revision});
+            record["audit"] = audit.take();
             record["integrity"] = json!(storage::hash(&record)?);
             storage::atomic_json(&audit_path, &record)?;
+            audit = record["audit"].take();
             fs::rename(&temp, &final_path).map_err(|e| format!("OUTPUT_COMMIT: {e}"))?;
             r.measure("commit", 1, Some(1), "file", "文件已提交");
             Ok(())
@@ -1106,9 +1112,9 @@ impl Engine {
                 let _ = repair::save(p, &report);
             }
         }
-        Ok(
-            json!({"path":final_path,"plan":plan,"projectId":p.project_id,"revision":p.revision,"startUs":effective_range.0,"endUs":effective_range.1,"mediaStartUs":effective_range.0,"mediaEndUs":effective_range.1,"cached":false,"quickPreview":preview,"audit":audit,"completedExport":completed_export,"effectiveProject":if original_revision!=p.revision{Some(p)}else{None}}),
-        )
+        let mut result = json!({"path":final_path,"plan":plan,"projectId":p.project_id,"revision":p.revision,"startUs":effective_range.0,"endUs":effective_range.1,"mediaStartUs":effective_range.0,"mediaEndUs":effective_range.1,"cached":false,"quickPreview":preview,"completedExport":completed_export,"effectiveProject":if original_revision!=p.revision{Some(p)}else{None}});
+        result["audit"] = audit;
+        Ok(result)
     }
     fn publish_previews(&self, items: &[Value]) {
         if let Some(j) = &mut self.inner.lock().unwrap().job {
@@ -1285,7 +1291,7 @@ fn preview_groups(items: &[Value], (max_cuts, max_duration): (usize, Us), select
 fn preview_audit_summary(audit: &Value) -> Value {
     if !audit.is_object() {return Value::Null;}
     let mut summary = serde_json::Map::new();
-    for key in ["profile", "residualFrames", "candidateFrames", "needsReview", "status", "scope", "detectionStatus"] {
+    for key in ["profile", "transitionVersion", "residualFrames", "transitionResidualFrames", "candidateFrames", "needsReview", "status", "scope", "detectionStatus"] {
         if let Some(value) = audit.get(key) {summary.insert(key.into(), value.clone());}
     }
     let checks = audit["checks"].as_array();

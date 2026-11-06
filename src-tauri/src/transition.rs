@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 const REDUCED_WIDTH: usize = 192;
 const CONTEXT_US: i64 = 100_000;
 const MAX_TRANSITION_US: i64 = 80_000;
+// Beyond the original short-frame rule, duration alone is never sufficient.
+const MAX_MOVING_TRANSITION_US: i64 = 200_000;
+const STABLE_SELECTION_US: i64 = 40_000;
 const PATCH_RADIUS: usize = 4;
 const SEARCH_RADIUS: isize = 16;
 
@@ -37,6 +40,8 @@ pub struct Assessment {
     pub adjacent_fallback_frames: usize,
     #[serde(default)]
     pub maximum_roundtrip_width_fraction: f64,
+    #[serde(default)]
+    pub maximum_stable_selection_us: i64,
 }
 
 impl Assessment {
@@ -52,6 +57,7 @@ impl Assessment {
             minimum_inlier_fraction: 0.,
             adjacent_fallback_frames: 0,
             maximum_roundtrip_width_fraction: 0.,
+            maximum_stable_selection_us: 0,
         }
     }
 }
@@ -481,6 +487,30 @@ fn probe_indices(first: usize, last: usize) -> Vec<usize> {
     result
 }
 
+fn model_distance(a: Affine, b: Affine, width: usize, height: usize) -> f64 {
+    // Difference in the same baseline coordinate system, without inversion
+    // or repeated resampling. Normalized by width for every recording layout.
+    Affine {
+        x: [1. + a.x[0] - b.x[0], a.x[1] - b.x[1], a.x[2] - b.x[2]],
+        y: [a.y[0] - b.y[0], 1. + a.y[1] - b.y[1], a.y[2] - b.y[2]],
+    }.motion(width, height)
+}
+
+fn moving_selection_hold(path: &[(i64, Affine)], end: i64, w: usize, h: usize) -> i64 {
+    let mut longest = 0;
+    for (i, &(start, anchor)) in path.iter().enumerate() {
+        let mut stop = end;
+        for &(time, model) in &path[i + 1..] {
+            if model_distance(anchor, model, w, h) > 0.0015 {
+                stop = time;
+                break;
+            }
+        }
+        longest = longest.max(stop - start);
+    }
+    longest
+}
+
 /// `pre` excludes paused frames; `post` starts at the first resumed frame.
 /// A zero-length pause is permitted for auditing the already-cut output seam.
 /// The caller must never invoke this on an unconfirmed/manual pause for editing.
@@ -528,7 +558,7 @@ pub fn assess(
     let start = pre[onset].time_us;
     result.candidate_frames = pre.len() - onset;
     result.candidate_duration_us = pause_start_us - start;
-    if onset == 0 || result.candidate_duration_us > MAX_TRANSITION_US {
+    if onset == 0 || result.candidate_duration_us > MAX_MOVING_TRANSITION_US {
         result.reason = "protected_sustained_selection".into();
         return result;
     }
@@ -607,6 +637,9 @@ pub fn assess(
     result.minimum_motion_width_fraction = 1.;
     let mut previous: Option<(Plane, Affine)> = None;
     let mut accumulated_roundtrip = 0.;
+    let mut trajectory = Vec::with_capacity(result.candidate_frames);
+    let mut largest_motion: f64 = 0.;
+    let mut maximum_backtrack: f64 = 0.;
     for frame in &pre[onset..] {
         let Some(target) = Plane::new(frame, width, height) else {
             result.reason = "invalid_frames".into();
@@ -661,11 +694,30 @@ pub fn assess(
             result.reason = "local_effect_or_no_motion".into();
             return result;
         }
+        largest_motion = largest_motion.max(r.motion);
+        maximum_backtrack = maximum_backtrack.max(largest_motion - r.motion);
+        trajectory.push((frame.time_us, r.model));
         previous = Some((target, r.model));
     }
     if result.minimum_motion_width_fraction < result.maximum_baseline_width_fraction * 3. + 0.003 {
         result.reason = "insufficient_seam_improvement".into();
         return result;
+    }
+    if result.candidate_duration_us > MAX_TRANSITION_US {
+        result.maximum_stable_selection_us = moving_selection_hold(
+            &trajectory, pause_start_us, reference.width, reference.height,
+        );
+        if result.maximum_stable_selection_us >= STABLE_SELECTION_US {
+            result.reason = "protected_stable_selection".into();
+            return result;
+        }
+        if maximum_backtrack > 0.0035
+            || model_distance(trajectory[0].1, trajectory.last().unwrap().1,
+                reference.width, reference.height) < 0.0065
+        {
+            result.reason = "protected_nonprogressive_selection".into();
+            return result;
+        }
     }
     result.reason = "accepted_transition".into();
     result.proposed_start_us = Some(start);
@@ -745,7 +797,7 @@ mod tests {
     #[test]
     fn sustained_and_continued_selection_are_protected() {
         let (mut pre, mut post) = fixture();
-        for f in &mut pre[8..] {
+        for f in &mut pre {
             f.selection = Some(true)
         }
         assert_eq!(
@@ -758,6 +810,62 @@ mod tests {
             assess(&normal_pre, &post, W, H, 200_000, 1_000_000).reason,
             "protected_continued_selection"
         );
+    }
+    fn moving_fixture(steps: usize, hold_after: Option<usize>) -> (Vec<GrayFrame>, Vec<GrayFrame>, i64) {
+        let (mut pre, post) = fixture();
+        pre.truncate(16);
+        let src = texture();
+        for i in 0..steps {
+            let step = hold_after.map_or(i, |last| i.min(last));
+            pre.push(GrayFrame {
+                time_us: 160_000 + i as i64 * 10_000,
+                pixels: warp(&src, 2. + step as f64, 2., 1.),
+                selection: Some(true),
+            });
+        }
+        (pre, post, 160_000 + steps as i64 * 10_000)
+    }
+    #[test]
+    fn longer_transition_requires_continued_geometry_progress() {
+        let (pre, post, end) = moving_fixture(12, None);
+        let a = assess(&pre, &post, W, H, end, 1_000_000);
+        assert_eq!(a.proposed_start_us, Some(160_000), "{a:?}");
+        assert_eq!(a.removed_frames, 12);
+        assert!(a.maximum_stable_selection_us < STABLE_SELECTION_US);
+    }
+    #[test]
+    fn settled_short_bullet_time_is_protected_even_when_camera_returns() {
+        let (pre, post, end) = moving_fixture(12, Some(7));
+        let a = assess(&pre, &post, W, H, end, 1_000_000);
+        assert_eq!(a.reason, "protected_stable_selection", "{a:?}");
+        assert!(a.proposed_start_us.is_none());
+        assert_eq!(a.maximum_stable_selection_us, 50_000);
+    }
+    #[test]
+    fn moving_selection_still_has_an_absolute_duration_limit() {
+        let (pre, post, end) = moving_fixture(21, None);
+        let a = assess(&pre, &post, W, H, end, 1_000_000);
+        assert_eq!(a.reason, "protected_sustained_selection");
+        assert!(a.proposed_start_us.is_none());
+    }
+    #[test]
+    fn intermediate_hold_is_not_hidden_by_later_motion() {
+        let translation = |x| Affine {x:[1.,0.,x],y:[0.,1.,0.]};
+        let path: Vec<_> = (0..12).map(|i| {
+            let x = if i < 3 { i } else if i < 8 { 3 } else { i - 4 };
+            (i * 10_000, translation(x as f64))
+        }).collect();
+        assert_eq!(moving_selection_hold(&path, 120_000, W, H), 50_000);
+    }
+    #[test]
+    fn hold_measurement_uses_timestamps_and_normalized_geometry() {
+        // VFR samples and doubled raster dimensions have the same decision.
+        for scale in [1., 2.] {
+            let path: Vec<_> = [(0,0.),(17_000,1.),(31_000,2.),(60_000,2.),(75_000,2.)]
+                .into_iter().map(|(t,x)| (t,Affine{x:[1.,0.,x*scale],y:[0.,1.,0.]})).collect();
+            assert_eq!(moving_selection_hold(&path, 90_000, (W as f64*scale) as usize,
+                (H as f64*scale) as usize), 59_000);
+        }
     }
     #[test]
     fn no_semantic_selection_never_deletes_camera_motion() {

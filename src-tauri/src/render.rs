@@ -34,6 +34,18 @@ fn retained_spans(plan: &Plan, range: (Us, Us)) -> Vec<(Us, Us, Us)> {
         })
         .collect()
 }
+// libavutil rejects deeply left-associated expressions. Keep additions
+// logarithmically nested for both frame selection and integer PTS mapping.
+pub(crate) fn filter_sum(terms: &[String]) -> String {
+    match terms {
+        [] => "0".into(),
+        [one] => one.clone(),
+        many => {
+            let (left, right) = many.split_at(many.len() / 2);
+            format!("({}+{})", filter_sum(left), filter_sum(right))
+        }
+    }
+}
 // Share exact frame selection with short-clip quality calibration. Encoding an
 // uncut source can hide a quality drop after the cut changes temporal context.
 pub(crate) fn video_selection(p: &Project, plan: &Plan, range: (Us, Us)) -> Result<String, String> {
@@ -42,7 +54,7 @@ pub(crate) fn video_selection(p: &Project, plan: &Plan, range: (Us, Us)) -> Resu
         return Err("无有效可渲染区间".into());
     }
     let spans = retained_spans(plan, range);
-    let selection = spans
+    let selection = filter_sum(&spans
         .iter()
         .enumerate()
         .map(|(i, (s, e, _))| {
@@ -62,18 +74,16 @@ pub(crate) fn video_selection(p: &Project, plan: &Plan, range: (Us, Us)) -> Resu
             };
             format!("gte(pts,{from})*lt(pts,{e})")
         })
-        .collect::<Vec<_>>()
-        .join("+");
-    let subtraction = plan
+        .collect::<Vec<_>>());
+    let subtraction = filter_sum(&plan
         .removed
         .iter()
-        .map(|c| format!("-gte(PTS,{})*({})", c.end_us, c.end_us - c.start_us))
-        .collect::<Vec<_>>()
-        .join("");
+        .map(|c| format!("gte(PTS,{})*{}", c.end_us, c.end_us - c.start_us))
+        .collect::<Vec<_>>());
     // Mapping uses actual PTS and known cut durations. Video concat alone would
     // guess a VFR segment's last frame duration and could accumulate drift.
     Ok(format!(
-        "settb=expr=1/1000000,setpts=PTS-{},select='{selection}',setpts='max(0,PTS{subtraction}-{})'",
+        "settb=expr=1/1000000,setpts=PTS-{},select='{selection}',setpts='max(0,PTS-{subtraction}-{})'",
         p.source.origin_us,
         start
     ))
@@ -350,7 +360,7 @@ pub fn render(
         (r.progress)(
             &format!(
                 "PREVIEW_BUDGET: {}",
-                serde_json::json!({"width":format.width,"height":format.height,"pixelFormat":format.pixel_format,"sourceCodec":format.video_codec,"bytesPerFrameBudget":frame_bytes,"threads":r.threads(),"queueLimit":128,"model":"preview-native-surfaces-v2-calibrated-h264"})
+                serde_json::json!({"width":format.width,"height":format.height,"pixelFormat":format.pixel_format,"sourceCodec":format.video_codec,"bytesPerFrameBudget":frame_bytes,"threads":r.threads(),"queueLimit":mix_queue_limit(p,plan,range),"model":"preview-native-surfaces-v2-calibrated-h264"})
             ),
             None,
         );
@@ -509,9 +519,9 @@ fn render_inner(
     let (g, a) = filter(p, plan, range, preview)?;
     let script =
         crate::storage::temp_file(target.parent().ok_or("无效输出目录")?, "render-filter")?;
-    let audio_script = if preview && a {
-        let (video_graph, audio_graph) = separate_preview_graphs(&g)?;
-        let audio_script = crate::storage::temp_file(target.parent().ok_or("无效输出目录")?, "preview-audio-filter")?;
+    let audio_script = if a {
+        let (video_graph, audio_graph) = separate_render_graphs(&g)?;
+        let audio_script = crate::storage::temp_file(target.parent().ok_or("无效输出目录")?, "render-audio-filter")?;
         fs::write(script.path(), video_graph).map_err(|e|e.to_string())?;
         fs::write(audio_script.path(), audio_graph).map_err(|e|e.to_string())?;
         Some(audio_script)
@@ -560,7 +570,7 @@ fn render_inner(
             "-y",
             "-copyts",
             "-filter_buffered_frames",
-            "128",
+            &mix_queue_limit(p, plan, range).to_string(),
         ]);
         if seek > 0 {
             cmd.extend(args(&["-seek_timestamp", "1", "-ss", &sec(seek)]));
@@ -816,14 +826,14 @@ fn render_inner(
 
 // Keep identical video selection and audio mixing expressions, but schedule
 // their graphs independently. A late audio trim must not retain raw 120 fps
-// video in the shared 128-frame filter queue before either encoder can start.
-fn separate_preview_graphs(graph: &str) -> Result<(String, String), String> {
+// video in a shared filter queue before either encoder can start.
+fn separate_render_graphs(graph: &str) -> Result<(String, String), String> {
     let mut links=graph.splitn(3,";\n");
-    let first=links.next().ok_or("PREVIEW_GRAPH: missing video input")?;
-    let second=links.next().ok_or("PREVIEW_GRAPH: missing video output")?;
-    let audio=links.next().ok_or("PREVIEW_GRAPH: missing audio graph")?;
+    let first=links.next().ok_or("RENDER_GRAPH: missing video input")?;
+    let second=links.next().ok_or("RENDER_GRAPH: missing video output")?;
+    let audio=links.next().ok_or("RENDER_GRAPH: missing audio graph")?;
     if !first.ends_with("[vcat]") || !second.ends_with("[vout]") || !audio.ends_with("[aout]") {
-        return Err("PREVIEW_GRAPH: unexpected filter layout".into());
+        return Err("RENDER_GRAPH: unexpected filter layout".into());
     }
     Ok((format!("{first};\n{second}"),audio.into()))
 }
@@ -834,10 +844,74 @@ mod preview_graph_tests {
     #[test]
     fn separate_graphs_preserve_every_filter_expression() {
         let original="[0:0]select='gte(pts,1)'[vcat];\n[vcat]null[vout];\n[0:1]atrim=start=50,asetpts=PTS-STARTPTS[a];\n[a]alimiter=level=0[aout]";
-        let (video,audio)=separate_preview_graphs(original).unwrap();
+        let (video,audio)=separate_render_graphs(original).unwrap();
         assert_eq!(format!("{video};\n{audio}"),original);
-        assert!(separate_preview_graphs("[0:0]null[vout]").is_err());
+        assert!(separate_render_graphs("[0:0]null[vout]").is_err());
     }
+    #[test]
+    fn dense_cut_sums_keep_every_term_and_bound_parser_depth() {
+        assert_eq!(filter_sum(&[]), "0");
+        for count in [1usize, 121, 2048] {
+            let terms: Vec<_> = (0..count).map(|i| i.to_string()).collect();
+            let expression = filter_sum(&terms);
+            let leaves: Vec<_> = expression.split(|c| matches!(c, '(' | ')' | '+'))
+                .filter(|s| !s.is_empty()).collect();
+            assert_eq!(leaves, terms);
+            let (mut depth, mut maximum) = (0usize, 0);
+            for byte in expression.bytes() {
+                match byte {
+                    b'(' => { depth += 1; maximum = maximum.max(depth); }
+                    b')' => depth -= 1,
+                    _ => {}
+                }
+            }
+            assert_eq!(depth, 0);
+            assert_eq!(maximum, count.next_power_of_two().ilog2() as usize);
+        }
+    }
+    #[test]
+    fn audio_limit_only_counts_branches_and_tail_time_in_the_rendered_range() {
+        let mut p = crate::timeline::tests::project();
+        let mut plan = crate::timeline::build(&p).unwrap();
+        p.audio_index = Some(1);
+        let range = (0, plan.duration_us);
+        assert_eq!(mix_queue_limit(&p, &plan, range), 128);
+        plan.tails.push(Tail {source_us: 0, output_us: 3*SECOND, duration_us: 2*SECOND,
+            gain: 1.0, mode: "fade".into(), envelope: vec![], notes: vec![]});
+        assert_eq!(mix_queue_limit(&p, &plan, (0, 3*SECOND)), 128);
+        // One second of the tail plus two seconds of kept audio.
+        assert_eq!(mix_queue_limit(&p, &plan, (2*SECOND, 4*SECOND)), 2*282 + 2*8 + 256);
+        assert!(mix_queue_limit(&p, &plan, range) > 128);
+        p.audio_index = None;
+        assert_eq!(mix_queue_limit(&p, &plan, range), 128);
+    }
+}
+
+fn mix_queue_limit(p: &Project, plan: &Plan, range: (Us, Us)) -> u64 {
+    let (start, end) = range;
+    let overlaps = |at: Us, len: Us| at < end && at.saturating_add(len) > start;
+    let mut branches = plan.music.iter().filter(|m| overlaps(m.output_us, m.duration_us)).count();
+    let mut tail_us = 0u64;
+    if p.audio_index.is_some() {
+        branches += plan.keep.iter().filter(|k| overlaps(k.output_us, k.end_us - k.start_us)).count();
+        for tail in plan.tails.iter().filter(|t| overlaps(t.output_us, t.duration_us)) {
+            let len = end.min(tail.output_us.saturating_add(tail.duration_us)) - start.max(tail.output_us);
+            tail_us = tail_us.saturating_add(len as u64);
+            branches += 1;
+        }
+    }
+    if branches < 2 {
+        return 128;
+    }
+    // At 48 kHz allow two queued 512-sample blocks per retained audio block,
+    // plus each trim/delay link's working set. This is a limit, not a buffer
+    // allocation; the real physical-memory/commit guards stay active.
+    let buffered_us = ((end - start) as u64).saturating_add(tail_us);
+    let blocks = buffered_us.saturating_mul(48_000).div_ceil(512_000_000);
+    blocks.saturating_mul(2)
+        .saturating_add((branches as u64).saturating_mul(8))
+        .saturating_add(256)
+        .min(i32::MAX as u64)
 }
 
 #[cfg(feature = "smart-cut")]
@@ -866,6 +940,7 @@ pub(crate) fn mux_smart_audio(
         16 * 1024 * 1024,
         2,
     )?;
+    let queue_limit = mix_queue_limit(p, plan, (0, plan.duration_us));
     let mut cmd = args(&[
         "-hide_banner",
         "-v",
@@ -873,7 +948,7 @@ pub(crate) fn mux_smart_audio(
         "-y",
         "-copyts",
         "-filter_buffered_frames",
-        "128",
+        &queue_limit.to_string(),
     ]);
     let video_index = if audio {
         cmd.extend(args(&[
